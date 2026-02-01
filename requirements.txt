@@ -7,3 +7,6 @@ fastapi
 torch
 torchvision
 torchaudio
+
+#JAX with CUDA
+jax[cuda13]
