@@ -70,3 +70,28 @@ output/
 *.log
 temp/
 tmp/
+logs/
+*.tmp
+
+# Results
+results/
+output/
+checkpoints/
+wandb/
+
+# OS
+Thumbs.db
+.DS_Store
+.Spotlight-V100
+.Trashes
+
+# LibTorch ( large binaries)
+libtorch/
+libtorch-*/
+
+# Model checkpoints (NOTE: release versions to be excepted later)
+models/checkpoints/*.pth
+models/checkpoints/*.pt
+
+# Keep directory structure
+!**/.gitkeep

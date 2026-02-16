@@ -1,12 +1,17 @@
 numpy
 jupyter
 fastapi
+matplotlib
 
-#PyTorch with CUDA
+# PyTorch with CUDA
 --extra-index-url https://download.pytorch.org/whl/cu126
 torch
 torchvision
 torchaudio
 
-#JAX with CUDA
+# JAX with CUDA
 jax[cuda13]
+
+# finance data loaders
+yfinance
+pandas-datareader
