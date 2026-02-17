@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 
 # Distribution and packaging
+**/build/
 build/
 develop-eggs/
 dist/
@@ -95,3 +96,44 @@ models/checkpoints/*.pt
 
 # Keep directory structure
 !**/.gitkeep
+
+
+### for visual studio community
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Build folders
+[Bb]in/
+[Oo]bj/
+x64/
+x86/
+Generated\ Files/
+
+# Individual artifact types
+*.exe
+*.dll
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.aps
+*.ncb
+*.opendb
+*.sdf
+*.cache
+*.tlog
+*.log
+
+# Visual Studio personal settings
+*.vcxproj.user
+.vs/
+
+# Build outputs
+[Bb]in/
+[Oo]bj/
+HedgingEngine/x64/
+HedgingEngine/Debug/
+HedgingEngine/Release/

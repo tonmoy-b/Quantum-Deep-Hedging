@@ -1,0 +1,8 @@
+# .dockerignore
+.vs/
+out/
+build/
+bin/
+obj/
+*.sln
+*.vcxproj*
