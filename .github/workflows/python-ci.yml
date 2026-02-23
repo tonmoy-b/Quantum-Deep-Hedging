@@ -30,9 +30,15 @@ jobs:
 
     - name: Install dependencies
       run: |
+        pwd
+        ls -R
         python -m pip install --upgrade pip
-        pip install black ruff pytest torch
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        pip install black ruff pytest
+        if [ -f ../requirements.txt ]; then 
+          pip install -r requirements.txt; 
+        else
+          echo "ERROR: requirements.txt not found" && exit 1
+        fi
 
     - name: Check formatting (Black)
       run: black --check .
