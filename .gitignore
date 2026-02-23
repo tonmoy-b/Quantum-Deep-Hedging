@@ -43,6 +43,9 @@ venv.bak/
 .cache/
 .pytest_cache/
 
+# Linter 
+.ruff_cache/
+
 # Jupyter Notebook files
 .ipynb_checkpoints
 
