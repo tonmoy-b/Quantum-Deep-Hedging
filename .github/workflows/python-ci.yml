@@ -3,12 +3,14 @@ name: Python CI
 on:
   push:
     branches: [ main ]
-    paths:
-      - 'python/**'  # Only trigger for changes to python/ files
+    # paths:
+    #   - 'python/**'  # Only trigger for changes to python/ files
+    #   - '.github/workflows/python-ci.yml'
   pull_request:
     branches: [ main ]
-    paths:
-      - 'python/**'
+    # paths:
+    #   - 'python/**'
+    #   - '.github/workflows/python-ci.yml'
 
 jobs:
   build:
@@ -33,8 +35,6 @@ jobs:
         python -m pip install --upgrade pip
         # install torch-cpu in github actions runner beforehand to skip gpu install
         pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
-        grep -v "torch" requirements.txt > requirements_ci.txt
-        pip install -r requirements_ci.txt
         pip install --no-cache-dir black ruff pytest pytest-mock yfinance pandas-datareader
 
     - name: Check formatting (Black)
