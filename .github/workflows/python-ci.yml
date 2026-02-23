@@ -34,8 +34,7 @@ jobs:
         ls -R
         python -m pip install --upgrade pip
         # install torch-cpu in github actions runner beforehand to skip gpu install
-        pip install torch --index-url https://download.pytorch.org/whl/cpu
-        pip install black ruff pytest
+        pip install black ruff pytest torch
         # if [ -f ../requirements.txt ]; then
         #   pip install -r requirements.txt; 
         # else
