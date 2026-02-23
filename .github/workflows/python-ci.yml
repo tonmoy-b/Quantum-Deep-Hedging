@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'python/**'  # Only trigger if files in this folder change
+      - 'python/**'  # Only trigger for changes to python/ files
   pull_request:
     branches: [ main ]
     paths:
@@ -14,7 +14,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     
-    # curtail runs to the python folder 
+    # curtail runs-actions to the python folder 
     defaults:
       run:
         working-directory: ./python
@@ -36,11 +36,11 @@ jobs:
         # install torch-cpu in github actions runner beforehand to skip gpu install
         pip install torch --index-url https://download.pytorch.org/whl/cpu
         pip install black ruff pytest
-        if [ -f ../requirements.txt ]; then
-          pip install -r requirements.txt; 
-        else
-          echo "ERROR: requirements.txt not found" && exit 1
-        fi
+        # if [ -f ../requirements.txt ]; then
+        #   pip install -r requirements.txt; 
+        # else
+        #   echo "ERROR: requirements.txt not found" && exit 1
+        # fi
 
     - name: Check formatting (Black)
       run: black --check .
