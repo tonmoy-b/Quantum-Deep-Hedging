@@ -1,0 +1,44 @@
+name: Python CI
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'python/**'  # Only trigger if files in this folder change
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'python/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    # curtail runs to the python folder 
+    defaults:
+      run:
+        working-directory: ./python
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install black ruff pytest
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+    - name: Check formatting (Black)
+      run: black --check .
+
+    - name: Lint (Ruff)
+      run: ruff check .
+
+    - name: Run tests
+      run: pytest

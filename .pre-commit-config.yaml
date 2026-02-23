@@ -1,0 +1,23 @@
+repos:
+  - repo: https://github.com/psf/black
+    rev: 24.3.0
+    hooks:
+      - id: black
+        files: ^python/
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.3.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^python/
+
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        entry: pytest python/
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+        files: ^python/

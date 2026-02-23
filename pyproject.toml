@@ -1,0 +1,4 @@
+[tool.ruff.lint.extend-per-file-ignores]
+# turn off unused var error for ruff in tests
+"python/tests/**/*.py" = ["F841"]
+
