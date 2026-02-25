@@ -1,5 +1,5 @@
 import torch
-from src.utils import get_best_device
+from utils import get_best_device
 
 
 def pyt_device_check(device=None):
