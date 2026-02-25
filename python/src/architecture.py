@@ -1,8 +1,8 @@
 from typing import Callable
 import torch
 from torch import nn
-from utils import get_best_device, EuropeanCallPayoff
-from market_simulations import heston_simulation
+from src.utils import get_best_device, EuropeanCallPayoff
+from src.market_simulations import heston_simulation
 
 
 class DeepHedgingMLPModel(nn.Module):
