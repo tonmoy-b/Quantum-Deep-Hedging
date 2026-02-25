@@ -146,11 +146,6 @@ def train_deep_hedging_heston(
             # simulate price and variance paths
             S_paths, v_paths = heston_simulation(n_paths=batch_size, device=device)
             payoffs = payoff_fn(S_paths[:, -1])
-            print(
-                f"For batch_idx-{batch_idx}, payoffs.shape is {payoffs.shape}\n \
-            S_paths[:3, :3] is {S_paths[:3, :3] } and v_paths[:3, :3] is { v_paths[:3, :3]}, and \
-            payoffs[:3] is {payoffs[:3]}"
-            )
             # print(payoffs.shape)
             # execute hedging strategy
             pnl, _ = hedge(
