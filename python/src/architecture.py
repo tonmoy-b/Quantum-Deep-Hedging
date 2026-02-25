@@ -91,7 +91,7 @@ def hedge(
         pnl -= tc_cost  # adjust wealth for accrued transaction costs
         delta = delta_new
         hedge_positions[:, step_index] = delta.squeeze()
-    # final pnl
+    # final pnl  :
     final_price_change = S_path[:, -1] - S_path[:, -2]
     pnl += delta.squeeze() * final_price_change
     pnl -= payoff
