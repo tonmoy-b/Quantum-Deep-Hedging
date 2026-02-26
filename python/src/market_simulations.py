@@ -59,7 +59,7 @@ def pyt_gbm(
 
 
 def heston_simulation(
-    n_paths: int = 5,
+    n_paths: int = 256,
     S0: float = 100.0,  # starting stock price
     v0: float = 0.04,  # starting variance (vol^2, so sqrt(0.04)=0.2 or 20% volatility)
     mu: float = 0.05,  # drift of the process

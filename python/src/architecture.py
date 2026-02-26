@@ -1,8 +1,10 @@
 from typing import Callable
+import matplotlib.pyplot as plt
 import torch
 from torch import nn
 from src.utils import get_best_device, EuropeanCallPayoff
 from src.market_simulations import heston_simulation
+from src.black_scholes import get_black_scholes_delta
 
 
 class DeepHedgingMLPModel(nn.Module):
@@ -42,6 +44,9 @@ def hedge(
     payoff: torch.tensor,
     model: nn.Module,
     transaction_cost: float = 0.001,
+    strike: float = 100.0,
+    T: float = 1.0,
+    log_money_input: bool = True,
 ) -> tuple[torch.tensor, torch.tensor]:
     """
     This function computes the hedging strategy
@@ -59,6 +64,7 @@ def hedge(
     """
     batch_size, n_steps_plus_1 = S_path.shape
     n_steps = n_steps_plus_1 - 1
+    dt = T / n_steps
     device = get_best_device()
 
     model.to(device=device)
@@ -70,14 +76,26 @@ def hedge(
     pnl: torch.Tensor = torch.zeros(batch_size, device=device)
     hedge_positions = torch.zeros(batch_size, n_steps, device=device)
 
-    hedging_steps = range(n_steps)
-    for step_index in hedging_steps:
+    for step_index in range(n_steps):
         # all prices and variances at step t in the shape (batch_size,)
         S_t = S_path[:, step_index].unsqueeze(1)
         v_t = v_path[:, step_index].unsqueeze(1)
+        # normalize to log-scale
+        log_moneyness = torch.log(S_t / strike)  # ln(S/K)
+        # scale time to expiry/percentages for nn to learn effectively
+        time_to_expiry = torch.full(
+            (batch_size, 1), T - (step_index * dt), device=device
+        )
         # network input (input dims of 4) -> [S_t, v_t, delta_{t-1}, pnl_{t-1}]
         # concat at dim=1 for a single vector input to the NN
-        net_input: torch.Tensor = torch.cat([S_t, v_t, delta, pnl.unsqueeze(1)], dim=1)
+        if log_money_input:
+            net_input: torch.Tensor = torch.cat(
+                [log_moneyness, v_t, time_to_expiry, delta], dim=1
+            )
+        else:
+            net_input: torch.Tensor = torch.cat(
+                [S_t, v_t, delta, pnl.unsqueeze(1)], dim=1
+            )
         net_input.to(device=device)
         delta_new = model(net_input)  # get the recommended hedge for this time step
         trade = delta_new - delta
@@ -111,14 +129,17 @@ def cvar_loss(
     pnl: tensor holding the current PnL
     alpha: the x% over which to compute avg.
 
-    return average value of alpha% of pnl samples with lowest values
+    return negated average value of alpha% of pnl samples with lowest values
     """
     import torch
 
-    batch_size = pnl[0]  # first value in tensor
+    batch_size = pnl.size(0)  # isolate to first dim of shape
     num_rows_worst = max(1, int(alpha * batch_size))
     sorted_pnl_rows, _ = torch.sort(pnl)
-    return sorted_pnl_rows[:num_rows_worst].mean()  # return avg of alpha% worst values
+    # return negative loss to effect penalization
+    return -sorted_pnl_rows[
+        :num_rows_worst
+    ].mean()  # return negated avg of alpha% worst values
 
 
 def train_deep_hedging_heston(
@@ -168,6 +189,66 @@ def train_deep_hedging_heston(
     return model, losses
 
 
+def compare_and_plot(model, payoff_fn, S0=100.0, T=1.0, n_test_paths=2000):
+    device = get_best_device()
+    model.eval()
+    # simulate price paths for testing - unseen paths
+    S_paths, v_paths = heston_simulation(
+        n_paths=n_test_paths, S0=S0, T=T, device=device
+    )
+    payoffs = payoff_fn(S_paths[:, -1])
+    n_steps = S_paths.shape[1] - 1
+    dt = T / n_steps
+    with torch.no_grad():
+        pnl_dh, _ = hedge(S_paths, v_paths, payoffs, model, strike=100.0, T=T)
+    pnl_bs = torch.zeros(n_test_paths, device=device)
+    delta_bs_prev = torch.zeros((n_test_paths, 1), device=device)
+
+    for t_idx in range(n_steps):
+        S_t = S_paths[:, t_idx]
+        v_t = v_paths[:, t_idx]
+        delta_bs = get_black_scholes_delta(
+            S_t,
+            payoff_fn.strike,
+            T,
+            t_idx * dt,
+            r=0.05,
+            sigma=torch.sqrt(v_t),
+            device=device,
+        )
+        if t_idx > 0:
+            pnl_bs += delta_bs_prev.squeeze() * (
+                S_paths[:, t_idx] - S_paths[:, t_idx - 1]
+            )
+        delta_bs_prev = delta_bs
+    pnl_bs += delta_bs_prev.squeeze() * (S_paths[:, -1] - S_paths[:, -2])
+    pnl_bs -= payoffs
+
+    # graph the performance of the NN against analytic-BS sol'n
+    plt.figure(figsize=(12, 6))
+    plt.hist(
+        pnl_dh.cpu().numpy(),
+        bins=100,
+        alpha=0.5,
+        label=f"Deep Hedging (CVaR: {cvar_loss(pnl_dh):.4f})",
+        color="blue",
+    )
+    plt.hist(
+        pnl_bs.cpu().numpy(),
+        bins=100,
+        alpha=0.5,
+        label=f"Black Scholes (CVaR: {cvar_loss(pnl_bs):.4f})",
+        color="orange",
+    )
+    plt.axvline(0, color="red", linestyle="--")
+    plt.title("Heston Model: Deep Hedging vs. Black Scholes P&L Distribution")
+    plt.xlabel("Terminal PnL")
+    plt.ylabel("Frequency")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.show()
+
+
 if __name__ == "__main__":
     # device = get_best_device()
     # S, v = heston_simulation()
@@ -176,3 +257,4 @@ if __name__ == "__main__":
     # pnl, hedge_positions = hedge(S, v, payoffs, model)
     # cvar_loss_computed = cvar_loss(pnl, alpha=0.01, device=device)
     model, losses = train_deep_hedging_heston(DeepHedgingMLPModel())
+    compare_and_plot(model, EuropeanCallPayoff())
