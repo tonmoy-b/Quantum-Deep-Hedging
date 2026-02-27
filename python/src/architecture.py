@@ -11,7 +11,12 @@ class DeepHedgingMLPModel(nn.Module):
     def __init__(
         self,
         input_dim: int = 4,  # input to the NN -> [S, v, pnl, old_hedge_ratio ]
-        hidden_dims: list[int] = [64, 64],  # dimensions of hidden layers in the MLP
+        hidden_dims: list[int] = [
+            256,
+            256,
+            256,
+            256,
+        ],  # dimensions of hidden layers in the MLP
         output_dim: int = 1,  # NN output -> hedging decision
         device: str = get_best_device(),
     ):
@@ -23,7 +28,10 @@ class DeepHedgingMLPModel(nn.Module):
         # pack in the hidden layers after input layer
         for hidden_dim in hidden_dims:
             layers.append(nn.Linear(previous_dim, hidden_dim))
-            layers.append(nn.ReLU())  # activation ReLU
+            # layers.append(nn.BatchNorm1d(hidden_dim)),
+            # layers.append(nn.ReLU())  # activation ReLU
+            layers.append(nn.LayerNorm(hidden_dim))
+            layers.append(nn.SiLU())  # Swish (SiLU) for smoother gradients
             previous_dim = hidden_dim  # following loop iteration will pick up from here
         layers.append(
             nn.Linear(previous_dim, output_dim)
@@ -117,7 +125,7 @@ def hedge(
 
 
 def cvar_loss(
-    pnl: torch.Tensor, alpha: float = 0.1, device="cpu"
+    pnl: torch.Tensor, alpha: float = 0.3, device="cpu"
 ) -> (
     torch.Tensor
 ):  # scalar return that averages loss over the lowest alpha% of the pnl distribution

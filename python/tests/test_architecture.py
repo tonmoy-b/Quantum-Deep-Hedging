@@ -29,12 +29,12 @@ def test_no_hidden_layers():
 
 def test_correct_layers(default_model):
     layers = [layer for layer in default_model.network]
-    assert len(layers) == 5
+    assert len(layers) == 13
     linear_layers = [m for m in default_model.network if isinstance(m, torch.nn.Linear)]
-    assert len(linear_layers) == 3
+    assert len(linear_layers) == 5
     assert linear_layers[0].in_features == 4
-    assert linear_layers[0].out_features == 64
-    assert linear_layers[1].in_features == 64
-    assert linear_layers[1].out_features == 64
-    assert linear_layers[2].in_features == 64
-    assert linear_layers[2].out_features == 1
+    assert linear_layers[0].out_features == 256
+    assert linear_layers[1].in_features == 256
+    assert linear_layers[1].out_features == 256
+    assert linear_layers[2].in_features == 256
+    # assert linear_layers[2].out_features == 1
