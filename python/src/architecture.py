@@ -2,6 +2,7 @@ from typing import Callable
 import matplotlib.pyplot as plt
 import torch
 from torch import nn
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from src.utils import get_best_device, EuropeanCallPayoff
 from src.market_simulations import heston_simulation
 from src.black_scholes import get_black_scholes_delta
@@ -158,16 +159,23 @@ def train_deep_hedging_heston(
     batch_size: int = 256,
     lr: float = 0.001,
     transaction_cost: float = 0.001,
-    alpha: float = 0.05,
+    alpha: float = 0.1,
     device: str = "cpu",
 ):
     """Train Deep Hedging model for Heston market simulation"""
 
     model = model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    # mode->min to reduce CVar loss
+    # factor->0.5, increse lr*factor when stuck
+    # patience->5, times to try before moving on from lr
+    scheduler = ReduceLROnPlateau(
+        optimizer, mode="min", factor=0.5, patience=5
+    )  # , verbose=True)
 
     losses = []
-    for epoch in range(1):  # n_epochs
+    for epoch in range(n_epochs):  # n_epochs
+        model.train()
         epoch_losses = []
         n_batches = n_paths_per_epoch // batch_size
         batches: iter = range(n_batches)
@@ -192,8 +200,12 @@ def train_deep_hedging_heston(
             epoch_losses.append(loss.item())
         avg_loss = torch.mean(torch.tensor(epoch_losses))
         losses.append(avg_loss)
+        scheduler.step(avg_loss)  # scheduler tuning to avg cvar loss
         if (epoch + 1) % 10 == 0:
-            print(f"At Epoch No. {epoch+1}/{n_epochs}, CVaR Loss is {avg_loss:.4f}")
+            current_lr = optimizer.param_groups[0]["lr"]
+            print(
+                f"At Epoch No. {epoch+1}/{n_epochs}, CVaR Loss is {avg_loss:.4f}, and learning rate is {current_lr:.4}"
+            )
     return model, losses
 
 
