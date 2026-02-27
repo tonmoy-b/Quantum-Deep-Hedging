@@ -35,7 +35,7 @@ jobs:
         python -m pip install --upgrade pip
         # install torch-cpu in github actions runner beforehand to skip gpu install
         pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
-        pip install --no-cache-dir black ruff pytest pytest-mock yfinance pandas-datareader
+        pip install --no-cache-dir black ruff pytest pytest-mock yfinance pandas-datareader matplotlib
 
     - name: Check Black version
       run: black --version
