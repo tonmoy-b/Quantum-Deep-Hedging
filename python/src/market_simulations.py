@@ -121,6 +121,56 @@ def heston_simulation(
     return S, v
 
 
+def heston_simulation_full_truncation(
+    n_paths: int = 256,
+    S0: float = 100.0,
+    v0: float = 0.04,
+    mu: float = 0.05,
+    kappa: float = 2.0,
+    theta: float = 0.04,
+    sigma_v: float = 0.3,
+    rho: float = -0.7,
+    T: float = 1.0,
+    dt: float = 0.01,
+    device=None,
+):
+    """
+    Refined Heston simulation using Log-Normal price updates
+    and Full Truncation for variance stability.
+    """
+    device = get_best_device() if device is None else device
+    n_steps = int(T / dt)
+
+    S = torch.zeros(n_paths, n_steps + 1, device=device)
+    v = torch.zeros(n_paths, n_steps + 1, device=device)
+    S[:, 0] = S0
+    v[:, 0] = v0
+
+    # Brownian Motion Correlation Setup
+    # independent normal distributions as starting points
+    Z1 = torch.randn(n_paths, n_steps, device=device)
+    Z2 = torch.randn(n_paths, n_steps, device=device)
+    # induce the correlation rho in the Brownian motions, Cholesky technique
+    dW_S = Z1 * torch.sqrt(torch.tensor(dt))
+    dW_v = (rho * Z1 + torch.sqrt(1 - torch.tensor(rho) ** 2) * Z2) * torch.sqrt(
+        torch.tensor(dt)
+    )
+    log_S = torch.log(S[:, 0])
+
+    # calculate S_t, v_t per step
+    for t in range(n_steps):
+        # v_pos = max(v_t, 0), ensure v >= 0
+        v_pos = torch.clamp(v[:, t], min=0.0)
+        # Euler-Maruyama technique
+        dv = kappa * (theta - v_pos) * dt + sigma_v * torch.sqrt(v_pos) * dW_v[:, t]
+        v[:, t + 1] = v[:, t] + dv
+        # d(ln S) = (mu - 0.5 * v)dt + sqrt(v)dW_S
+        d_log_S = (mu - 0.5 * v_pos) * dt + torch.sqrt(v_pos) * dW_S[:, t]
+        log_S = log_S + d_log_S
+        S[:, t + 1] = torch.exp(log_S)
+    return S, v
+
+
 if __name__ == "__main__":
     print(get_best_device())
     S0, mu, sigma, T, dt = 100.0, 0.05, 0.2, 1.0, 0.001
