@@ -66,7 +66,7 @@ def heston_simulation_full_truncation(
 
 @qml.qnode(device=get_quantum_device(), interface="torch")
 def quantum_orthogonal_hedging_circuit(inputs, network_weights):
-    n_layers: int = 3
+    # n_layers: int = 3
     n_qubits: int = 4
     # angle encode the network inputs
     iter_qubits: list[int] = range(4)
@@ -132,7 +132,7 @@ def calculate_terminal_wealth__(price_paths, hedge_ratios, transaction_cost=0.00
     hedge_ratios: (batch, n_steps) - The Delta (delta) from your Quantum Layer
     transaction_cost: fixed cost per unit traded
     """
-    batch_size, n_steps = price_paths.shape
+    # batch_size, n_steps = price_paths.shape
     price_diffs = (
         price_paths[:, 1:] - price_paths[:, :-1]
     )  # dS = S_{t+1} - S_t, (batch, n_steps)
