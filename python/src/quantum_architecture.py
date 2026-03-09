@@ -5,12 +5,14 @@ import torch.optim as optim
 import matplotlib.pyplot as plt
 from src.market_simulations import get_best_device
 
+
 def get_quantum_device(n_qubits: int = 4):
-    '''
+    """
     This function returns a pennylane quantum device with name=hedging_q_device
     and n_qubits number of qubits
-    '''
-    return qml.device(name='default.qubit', wires=n_qubits)
+    """
+    return qml.device(name="default.qubit", wires=n_qubits)
+
 
 def heston_simulation_full_truncation(
     n_paths: int = 256,
@@ -23,15 +25,15 @@ def heston_simulation_full_truncation(
     rho: float = -0.7,
     T: float = 1.0,
     dt: float = 0.01,
-    device=None
+    device=None,
 ):
     """
-    Refined Heston simulation using Log-Normal price updates 
+    Refined Heston simulation using Log-Normal price updates
     and Full Truncation for variance stability.
     """
     device = get_best_device() if device is None else device
     n_steps = int(T / dt)
-    
+
     S = torch.zeros(n_paths, n_steps + 1, device=device)
     v = torch.zeros(n_paths, n_steps + 1, device=device)
     S[:, 0] = S0
@@ -43,13 +45,15 @@ def heston_simulation_full_truncation(
     Z2 = torch.randn(n_paths, n_steps, device=device)
     # induce the correlation rho in the Brownian motions, Cholesky technique
     dW_S = Z1 * torch.sqrt(torch.tensor(dt))
-    dW_v = (rho * Z1 + torch.sqrt(1 - torch.tensor(rho)**2) * Z2) * torch.sqrt(torch.tensor(dt))
+    dW_v = (rho * Z1 + torch.sqrt(1 - torch.tensor(rho) ** 2) * Z2) * torch.sqrt(
+        torch.tensor(dt)
+    )
     log_S = torch.log(S[:, 0])
-    
-    # calculate S_t, v_t per step 
+
+    # calculate S_t, v_t per step
     for t in range(n_steps):
         # v_pos = max(v_t, 0), ensure v >= 0
-        v_pos = torch.clamp(v[:, t], min=0.0) 
+        v_pos = torch.clamp(v[:, t], min=0.0)
         # Euler-Maruyama technique
         dv = kappa * (theta - v_pos) * dt + sigma_v * torch.sqrt(v_pos) * dW_v[:, t]
         v[:, t + 1] = v[:, t] + dv
@@ -60,139 +64,167 @@ def heston_simulation_full_truncation(
     return S, v
 
 
-@qml.qnode(device=get_quantum_device(),  interface='torch')
+@qml.qnode(device=get_quantum_device(), interface="torch")
 def quantum_orthogonal_hedging_circuit(inputs, network_weights):
     n_layers: int = 3
     n_qubits: int = 4
-    #angle encode the network inputs
+    # angle encode the network inputs
     iter_qubits: list[int] = range(4)
     qml.AngleEmbedding(inputs, wires=iter_qubits)
     qml.StronglyEntanglingLayers(weights=network_weights, wires=iter_qubits)
-    return [qml.expval(qml.PauliZ(i)) for i in range(n_qubits)] #measure on the Pauli-Z transform of the qubits
+    return [
+        qml.expval(qml.PauliZ(i)) for i in range(n_qubits)
+    ]  # measure on the Pauli-Z transform of the qubits
 
 
 class ExpectedShortfallLoss(nn.Module):
-    def __init__(self, regularization: float = 0.01, alpha: float =0.05):
+    def __init__(self, regularization: float = 0.01, alpha: float = 0.05):
         super(ExpectedShortfallLoss, self).__init__()
         self.alpha: float = alpha
         self.regularization: float = regularization
-        self.var_threshold: nn.Parameter = nn.Parameter(torch.tensor(0.0)) 
+        self.var_threshold: nn.Parameter = nn.Parameter(torch.tensor(0.0))
 
     def forward(self, portfolio_returns: torch.Tensor):
-        '''
+        """
         portfolio_returns: torch.Tensor of terminal wealth/returns for each path.
-        '''
-        portfolio_returns = portfolio_returns.double() # ensure higher precision
-        losses = -portfolio_returns # negated to affect penalization of loss
-        clamped_var = self.var_threshold.clamp(min=losses.min().item(), max=losses.max().item())
+        """
+        portfolio_returns = portfolio_returns.double()  # ensure higher precision
+        losses = -portfolio_returns  # negated to affect penalization of loss
+        clamped_var = self.var_threshold.clamp(
+            min=losses.min().item(), max=losses.max().item()
+        )
         # tail loss -> max(0, loss - VaR)
         tail_losses = torch.clamp(losses - clamped_var, min=0)
         # Rockafellar-Uryasev formula
         es_loss = self.var_threshold + (1.0 / self.alpha) * torch.mean(tail_losses)
         return es_loss
-    
+
     def get_var(self):
         return self.var_threshold.item() if self.var_threshold is not None else None
-    
+
 
 class HybridClassicalQuantumHedger(nn.Module):
-    def __init__(self, quantum_layer: qml.qnn.TorchLayer = None, n_layers:int = 3):
+    def __init__(self, quantum_layer: qml.qnn.TorchLayer = None, n_layers: int = 3):
         super().__init__()
         self.n_layers = n_layers
         self.n_qubits: int = 4
         # StronglyEntanglingLayers injests in shape: (layers, qubits, 3) -> for layers, qubits, R_x, R_y, R_z.
-        self.weights_shape = {'network_weights': (n_layers, 4, 3)}
-        self.pre_processing = nn.Linear(2, self.n_qubits) # input only S_t, v_t or other params for hedging?
-        self.quantum_layer = qml.qnn.TorchLayer(quantum_orthogonal_hedging_circuit, self.weights_shape)
-        self.post_processing = nn.Linear(self.n_qubits, 1) # network output - one output for the delta / hedge-ratio
-        
+        self.weights_shape = {"network_weights": (n_layers, 4, 3)}
+        self.pre_processing = nn.Linear(
+            2, self.n_qubits
+        )  # input only S_t, v_t or other params for hedging?
+        self.quantum_layer = qml.qnn.TorchLayer(
+            quantum_orthogonal_hedging_circuit, self.weights_shape
+        )
+        self.post_processing = nn.Linear(
+            self.n_qubits, 1
+        )  # network output - one output for the delta / hedge-ratio
+
     def forward(self, x):
         x = torch.tanh(self.pre_processing(x))
         x = self.quantum_layer(x)
-        return torch.sigmoid(self.post_processing(x)) # Normalized Hedge Ratio
-    
+        return torch.sigmoid(self.post_processing(x))  # Normalized Hedge Ratio
+
+
 def calculate_terminal_wealth__(price_paths, hedge_ratios, transaction_cost=0.0001):
-    '''
+    """
     price_paths: (batch, n_steps) - The Asset Price (S) from Heston
     hedge_ratios: (batch, n_steps) - The Delta (delta) from your Quantum Layer
     transaction_cost: fixed cost per unit traded
-    '''
+    """
     batch_size, n_steps = price_paths.shape
-    price_diffs = price_paths[:, 1:] - price_paths[:, :-1] # dS = S_{t+1} - S_t, (batch, n_steps)
-    hedge_gains = hedge_ratios * price_diffs # delta_t * dS_t
+    price_diffs = (
+        price_paths[:, 1:] - price_paths[:, :-1]
+    )  # dS = S_{t+1} - S_t, (batch, n_steps)
+    hedge_gains = hedge_ratios * price_diffs  # delta_t * dS_t
     # Transaction Cost = cost_rate * |delta_t - delta_{t-1}| * Price_t
     delta_diffs = torch.abs(hedge_ratios[:, 1:] - hedge_ratios[:, :-1])
     costs = transaction_cost * delta_diffs * price_paths[:, 2:]
-    total_hedge_pnl = torch.sum(hedge_gains - costs[:,:], dim=1) # sum p&l over entire path
+    total_hedge_pnl = torch.sum(
+        hedge_gains - costs[:, :], dim=1
+    )  # sum p&l over entire path
     # For a Call Option: max(S_T - K, 0)
-    strike_price = price_paths[:, 0].mean() # get strike from price paths with option as at the money
+    strike_price = price_paths[
+        :, 0
+    ].mean()  # get strike from price paths with option as at the money
     terminal_payoff = torch.clamp(price_paths[:, -1] - strike_price, min=0)
-    wealth = total_hedge_pnl - terminal_payoff # Terminal Wealth = Payoff - Hedge P&L
+    wealth = total_hedge_pnl - terminal_payoff  # Terminal Wealth = Payoff - Hedge P&L
     return wealth
+
 
 def calculate_terminal_wealth(price_paths, hedge_ratios, transaction_cost=0.0001):
     # price_paths: (batch, n_steps+1), hedge_ratios: (batch, n_steps)
-    price_diffs = price_paths[:, 1:] - price_paths[:, :-1] # (batch, n_steps)
-    hedge_gains = hedge_ratios * price_diffs # (batch, n_steps)
-    delta_diffs = torch.abs(hedge_ratios[:, 1:] - hedge_ratios[:, :-1])  # (batch, n_steps-1)
-    costs       = transaction_cost * delta_diffs * price_paths[:, 2:]  # (batch, n_steps-1)
+    price_diffs = price_paths[:, 1:] - price_paths[:, :-1]  # (batch, n_steps)
+    hedge_gains = hedge_ratios * price_diffs  # (batch, n_steps)
+    delta_diffs = torch.abs(
+        hedge_ratios[:, 1:] - hedge_ratios[:, :-1]
+    )  # (batch, n_steps-1)
+    costs = transaction_cost * delta_diffs * price_paths[:, 2:]  # (batch, n_steps-1)
     pnl = hedge_gains[:, 0].unsqueeze(1)  # no transaction cost at t=0
-    pnl = torch.cat([pnl, hedge_gains[:, 1:] - costs], dim=1)         # (batch, n_steps)
+    pnl = torch.cat([pnl, hedge_gains[:, 1:] - costs], dim=1)  # (batch, n_steps)
     total_hedge_pnl = torch.sum(pnl, dim=1)
-    strike_price    = price_paths[:, 0].mean()
+    strike_price = price_paths[:, 0].mean()
     terminal_payoff = torch.clamp(price_paths[:, -1] - strike_price, min=0)
     return total_hedge_pnl - terminal_payoff
 
 
-
-def train_quantum_hedger(model: nn.Module, n_epochs: int=50, batch_size: int=256, lr: float=0.01):
+def train_quantum_hedger(
+    model: nn.Module, n_epochs: int = 50, batch_size: int = 256, lr: float = 0.01
+):
     device = get_best_device()
-    model = model.to(device) 
+    model = model.to(device)
     criterion = ExpectedShortfallLoss(alpha=0.05).to(device)
-    optimizer = optim.Adam(list(model.parameters()) + list(criterion.parameters()), lr=lr)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=5)
+    optimizer = optim.Adam(
+        list(model.parameters()) + list(criterion.parameters()), lr=lr
+    )
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, "min", patience=5)
     model.train()
     loss_history = []
     var_history = []
     for epoch in range(n_epochs):
         # create fresh Heston price paths for this epoch
-        S, v = heston_simulation_full_truncation(n_paths=batch_size) # S: (batch, n_steps+1), v: (batch, n_steps+1)
+        S, v = heston_simulation_full_truncation(
+            n_paths=batch_size
+        )  # S: (batch, n_steps+1), v: (batch, n_steps+1)
         S_input = S[:, :-1].reshape(-1, 1) / 100.0  # Normalized Price
-        v_input = v[:, :-1].reshape(-1, 1) / 0.04   # Normalized Vol
+        v_input = v[:, :-1].reshape(-1, 1) / 0.04  # Normalized Vol
         inputs = torch.cat([S_input, v_input], dim=-1).float()
         optimizer.zero_grad()
-        deltas = model(inputs).view(batch_size, -1) #re-shape to (batch, n_steps)
+        deltas = model(inputs).view(batch_size, -1)  # re-shape to (batch, n_steps)
         wealth = calculate_terminal_wealth(S, deltas)
         loss = criterion(wealth)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
         scheduler.step(loss)
-        # record 
+        # record
         current_loss = loss.item()
         current_var = criterion.get_var()
         loss_history.append(current_loss)
         var_history.append(current_var)
         if epoch % 5 == 0:
-            print(f'Epoch {epoch:03d} | ES Loss: {current_loss:.4f} | VaR Est: {current_var:.6f}')
+            print(
+                f"Epoch {epoch:03d} | ES Loss: {current_loss:.4f} | VaR Est: {current_var:.6f}"
+            )
     return model, loss_history, var_history
+
 
 def plot_training_results(loss_history, var_history):
     fig, ax1 = plt.subplots(figsize=(10, 6))
     # ES block
-    color = 'tab:blue'
-    ax1.set_xlabel('Epoch')
-    ax1.set_ylabel('Expected Shortfall (Loss)', color=color)
-    ax1.plot(loss_history, color=color, label='ES Loss', linewidth=2)
-    ax1.tick_params(axis='y', labelcolor=color)
+    color = "tab:blue"
+    ax1.set_xlabel("Epoch")
+    ax1.set_ylabel("Expected Shortfall (Loss)", color=color)
+    ax1.plot(loss_history, color=color, label="ES Loss", linewidth=2)
+    ax1.tick_params(axis="y", labelcolor=color)
     # Var block
-    ax2 = ax1.twinx() 
-    color = 'tab:red'
-    ax2.set_ylabel('Estimated VaR', color=color)
-    ax2.plot(var_history, color=color, linestyle='--', label='VaR Threshold')
-    ax2.tick_params(axis='y', labelcolor=color)
-    #grid out
-    plt.title('Hybrid Quantum Hedging Training Progress')
+    ax2 = ax1.twinx()
+    color = "tab:red"
+    ax2.set_ylabel("Estimated VaR", color=color)
+    ax2.plot(var_history, color=color, linestyle="--", label="VaR Threshold")
+    ax2.tick_params(axis="y", labelcolor=color)
+    # grid out
+    plt.title("Hybrid Quantum Hedging Training Progress")
     fig.tight_layout()
     plt.grid(alpha=0.3)
     plt.show()
@@ -205,6 +237,5 @@ def full_trian_loop():
     return trained_model
 
 
-
 if __name__ == "__main__":
-    print('twiity!!')
+    print("twiity!!")
