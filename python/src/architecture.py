@@ -160,9 +160,9 @@ def train_deep_hedging_heston(
     lr: float = 0.001,
     transaction_cost: float = 0.001,
     alpha: float = 0.1,
-    device: str = "cpu",
+    device: str = 'cpu',
 ):
-    """Train Deep Hedging model for Heston market simulation"""
+    '''Train Deep Hedging model for Heston market simulation'''
 
     model = model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
@@ -201,8 +201,8 @@ def train_deep_hedging_heston(
         avg_loss = torch.mean(torch.tensor(epoch_losses))
         losses.append(avg_loss)
         scheduler.step(avg_loss)  # scheduler tuning to avg cvar loss
-        if (epoch + 1) % 10 == 0:
-            current_lr = optimizer.param_groups[0]["lr"]
+        if (epoch + 1) % 10 == 0: 
+            current_lr = optimizer.param_groups[0]['lr']
             print(
                 f"At Epoch No. {epoch+1}/{n_epochs}, CVaR Loss is {avg_loss:.4f}, and learning rate is {current_lr:.4}"
             )

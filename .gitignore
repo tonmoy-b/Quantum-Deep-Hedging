@@ -76,6 +76,8 @@ temp/
 tmp/
 logs/
 *.tmp
+# tmp file for scratch-write
+dd.md 
 
 # Results
 results/

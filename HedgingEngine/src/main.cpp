@@ -31,6 +31,10 @@ int main() {
         if (bytes_received > 0) {
             std::string msg(buffer, bytes_received);
             std::cout << "Received order data: " << msg << std::endl;
+            if (msg == "exit") {
+                std::cout << "Received Exit command, quitting..." << std::endl;
+                break;
+            }
 
             
         }

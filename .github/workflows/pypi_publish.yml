@@ -1,0 +1,35 @@
+name: Publish Quantum-Deep-Hedging Library to PyPI
+
+on:
+  push:
+    branches:
+      - release-branch  # isolate pip publishing to this branch
+
+jobs:
+  build-publish:
+    name: build & publish Python distributions to PyPI
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: release-branch # limit build to from this specific branch
+
+    - name: set up python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.13" # ensure 3.13 is stable with all major libs
+
+    - name: install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build twine
+
+    - name: build binary wheel and source tarball
+      run: python -m build
+
+    - name: publish distribution to PyPI
+      uses: pypa/github-action-pypi-publish@release/v1
+      with:
+        password: ${{ secrets.PYPI_API_TOKEN }}
+        # repository-url: https://test.pypi.org/legacy/
