@@ -1,8 +1,12 @@
 #include <iostream>
+#include <sstream>
 #include <vector>
+#include <torch/script.h>
 #include "network_util.h"
 
-int main() {
+int main(int argc, const char* argv[]) {
+
+
     std::cout << "HedgingEngine starting..." << std::endl;
     if (!init_networking()) return 1;
 

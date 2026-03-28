@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import torch
 from torch import nn
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from src.utils import get_best_device, EuropeanCallPayoff
+from src.utils import get_best_device, EuropeanCallPayoff, save_model_for_inference
 from src.market_simulations import heston_simulation
 from src.black_scholes import get_black_scholes_delta
 
@@ -268,6 +268,12 @@ def compare_and_plot(model, payoff_fn, S0=100.0, T=1.0, n_test_paths=2000):
     plt.grid(True, alpha=0.3)
     plt.show()
 
+def full_train():
+    model, losses = train_deep_hedging_heston(DeepHedgingMLPModel())
+    compare_and_plot(model, EuropeanCallPayoff())
+    parameters = torch.rand(1,4)
+    save_model_for_inference(model, parameters)
+
 
 if __name__ == "__main__":
     # device = get_best_device()
@@ -278,3 +284,6 @@ if __name__ == "__main__":
     # cvar_loss_computed = cvar_loss(pnl, alpha=0.01, device=device)
     model, losses = train_deep_hedging_heston(DeepHedgingMLPModel())
     compare_and_plot(model, EuropeanCallPayoff())
+    parameters = torch.rand(1,4)
+    save_model_for_inference(model, parameters)
+

@@ -1,4 +1,5 @@
 import torch
+from torch import nn
 
 
 def get_best_device() -> str:
@@ -19,3 +20,19 @@ class EuropeanCallPayoff:
 
 def simple_euro_payoff(S_T: torch.Tensor, strike: float, device="cpu") -> torch.tensor:
     return torch.relu(S_T - strike)
+
+def save_model_for_inference(model: nn.Module, parameters: list, save_file: str = None, overwrite_file: bool = False):
+    if model is None or parameters is None:
+        printf(f'Either model and/or parameters not given. Aborting save...')
+        return
+    #make sure the model is in eval mode
+    try:
+        save_file = '../saved_models/saved.pt' if save_file is None else save_file
+        model.eval()
+        traced_script_module = torch.jit.trace(model, parameters)
+        traced_script_module.save(save_file)
+        print(f"Model exported successfully to {save_file}")
+
+    except Exception as e:
+        print(f'Exception in save_model_for_inference, exception details = {e}')
+    

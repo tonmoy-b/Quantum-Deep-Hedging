@@ -1,0 +1,17 @@
+{
+	"version": 3,
+	"configurePresets": [
+		{
+			"name": "windows-libtorch-debug",
+			"displayName": "Windows x64 Debug (LibTorch)",
+			"description": "Targeting Windows with local LibTorch installation",
+			"generator": "Ninja",
+			"binaryDir": "${sourceDir}/out/build/x64-Debug",
+			"cacheVariables": {
+				"CMAKE_BUILD_TYPE": "Debug",
+				"CMAKE_PREFIX_PATH": "C:/Users/tonmo/Development/installations/libtorch-win-shared-with-deps-2.11.0+cu128/libtorch",
+				"Torch_DIR": "C:/Users/tonmo/Development/installations/libtorch-win-shared-with-deps-2.11.0+cu128/libtorch/share/cmake/Torch"
+			}
+		}
+	]
+}
