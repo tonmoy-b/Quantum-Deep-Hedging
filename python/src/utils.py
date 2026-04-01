@@ -29,7 +29,7 @@ def save_model_for_inference(
     overwrite_file: bool = False,
 ):
     if model is None or parameters is None:
-        printf(f"Either model and/or parameters not given. Aborting save...")
+        print("Either model and/or parameters not given. Aborting save...")
         return
     # make sure the model is in eval mode
     try:
