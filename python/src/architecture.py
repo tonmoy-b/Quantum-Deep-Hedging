@@ -268,10 +268,11 @@ def compare_and_plot(model, payoff_fn, S0=100.0, T=1.0, n_test_paths=2000):
     plt.grid(True, alpha=0.3)
     plt.show()
 
+
 def full_train():
     model, losses = train_deep_hedging_heston(DeepHedgingMLPModel())
     compare_and_plot(model, EuropeanCallPayoff())
-    parameters = torch.rand(1,4)
+    parameters = torch.rand(1, 4)
     save_model_for_inference(model, parameters)
 
 
@@ -284,6 +285,5 @@ if __name__ == "__main__":
     # cvar_loss_computed = cvar_loss(pnl, alpha=0.01, device=device)
     model, losses = train_deep_hedging_heston(DeepHedgingMLPModel())
     compare_and_plot(model, EuropeanCallPayoff())
-    parameters = torch.rand(1,4)
+    parameters = torch.rand(1, 4)
     save_model_for_inference(model, parameters)
-
