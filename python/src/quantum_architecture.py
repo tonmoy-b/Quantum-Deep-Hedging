@@ -143,7 +143,7 @@ def calculate_terminal_wealth(price_paths, hedge_ratios, transaction_cost=0.0001
 
 
 def train_quantum_hedger(
-    model: nn.Module, n_epochs: int = 50, batch_size: int = 256, lr: float = 0.01
+    model: nn.Module, n_epochs: int = 500, batch_size: int = 256, lr: float = 0.01
 ):
     device = get_best_device()
     model = model.to(device)
@@ -155,17 +155,22 @@ def train_quantum_hedger(
     model.train()
     loss_history = []
     var_history = []
+    # create fresh Heston price paths, 
+    # each epoch will sample from these 
+    # to control 
+    master_market_paths_sample_size: int = 4096
+    S_master, v_master = heston_simulation_full_truncation(
+        n_paths=master_market_paths_sample_size
+    )  # S: (batch, n_steps+1), v: (batch, n_steps+1)
     for epoch in range(n_epochs):
-        # create fresh Heston price paths for this epoch
-        S, v = heston_simulation_full_truncation(
-            n_paths=batch_size
-        )  # S: (batch, n_steps+1), v: (batch, n_steps+1)
-        S_input = S[:, :-1].reshape(-1, 1) / 100.0  # Normalized Price
-        v_input = v[:, :-1].reshape(-1, 1) / 0.04  # Normalized Vol
+        idx = torch.randint(0, master_market_paths_sample_size, (batch_size,))
+        S_batch, v_batch = S_master[idx], v_master[idx]
+        S_input = S_batch[:, :-1].reshape(-1, 1) / 100.0  # Normalized Price
+        v_input = v_batch[:, :-1].reshape(-1, 1) / 0.04  # Normalized Vol
         inputs = torch.cat([S_input, v_input], dim=-1).float()
         optimizer.zero_grad()
         deltas = model(inputs).view(batch_size, -1)  # re-shape to (batch, n_steps)
-        wealth = calculate_terminal_wealth(S, deltas)
+        wealth = calculate_terminal_wealth(S_batch, deltas)
         loss = criterion(wealth)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
