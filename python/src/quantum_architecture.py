@@ -90,16 +90,17 @@ class ExpectedShortfallLoss(nn.Module):
         """
         portfolio_returns = portfolio_returns.double()  # ensure higher precision
         losses = -portfolio_returns  # negated to affect penalization of loss
-        clamped_var = self.var_threshold.clamp(
-            min=losses.min().item(), max=losses.max().item()
-        )
+        clamped_var = self.var_threshold.clamp(min=losses.min(), max=losses.max())
         # tail loss -> max(0, loss - VaR)
         tail_losses = torch.clamp(losses - clamped_var, min=0)
         # Rockafellar-Uryasev formula
-        es_loss = self.var_threshold + (1.0 / self.alpha) * torch.mean(tail_losses)
+        # todo: check if self.var_threshold or clamped_var works better
+        es_loss = self.var_threshold + (1.0 / self.alpha) * torch.mean(
+            tail_losses
+        )  # either self.var_threshold or clamped_var
         # L2 regularization on the VaR threshold parameter
-        var_penalty = self.regularization * (self.var_threshold ** 2)
-        return es_loss + var_penalty 
+        var_penalty = self.regularization * (self.var_threshold**2)
+        return es_loss + var_penalty
 
     def get_var(self):
         return self.var_threshold.item() if self.var_threshold is not None else None
@@ -145,7 +146,7 @@ def calculate_terminal_wealth(price_paths, hedge_ratios, transaction_cost=0.0001
 
 
 def train_quantum_hedger(
-    model: nn.Module, n_epochs: int = 500, batch_size: int = 1024, lr: float = 0.01
+    model: nn.Module, n_epochs: int = 500, batch_size: int = 4 * 1024, lr: float = 0.01
 ):
     device = get_best_device()
     model = model.to(device)
@@ -153,12 +154,22 @@ def train_quantum_hedger(
     # optimizer = optim.Adam(
     #     list(model.parameters()) + list(criterion.parameters()), lr=lr
     # )
-    optimizer = optim.Adam([
-        {"params": model.pre_processing.parameters(), "lr": 1e-3, "weight_decay": 1e-4},
-        {"params": model.quantum_layer.parameters(), "lr": 5e-4}, 
-        {"params": model.post_processing.parameters(), "lr": 1e-3, "weight_decay": 1e-4},
-        {"params": criterion.parameters(), "lr": 2e-4},
-    ])
+    optimizer = optim.Adam(
+        [
+            {
+                "params": model.pre_processing.parameters(),
+                "lr": 1e-3,
+                "weight_decay": 1e-4,
+            },
+            {"params": model.quantum_layer.parameters(), "lr": 5e-4},
+            {
+                "params": model.post_processing.parameters(),
+                "lr": 1e-3,
+                "weight_decay": 1e-4,
+            },
+            {"params": criterion.parameters(), "lr": 2e-4},
+        ]
+    )
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, "min", patience=5)
     model.train()
     loss_history = []
@@ -173,16 +184,25 @@ def train_quantum_hedger(
     for epoch in range(n_epochs):
         idx = torch.randint(0, master_market_paths_sample_size, (batch_size,))
         S_batch, v_batch = S_master[idx], v_master[idx]
-        S_input = S_batch[:, :-1].reshape(-1, 1) / 100.0  # Normalized Price
-        v_input = v_batch[:, :-1].reshape(-1, 1) / 0.04  # Normalized Vol
+        # S_input = S_batch[:, :-1].reshape(-1, 1) / 100.0  # Normalized Price
+        # v_input = v_batch[:, :-1].reshape(-1, 1) / 0.04  # Normalized Vol
         n_steps = S_batch.shape[1] - 1
-        time_steps = torch.linspace(1.0, 0.0, n_steps, device=S_batch.device) 
-        time_input = time_steps.unsqueeze(0).expand(batch_size, -1).reshape(-1, 1) # shape : (batch_size*n_steps, 1)
+        time_steps = torch.linspace(1.0, 0.0, n_steps, device=S_batch.device)
+        time_input = (
+            time_steps.unsqueeze(0).expand(batch_size, -1).reshape(-1, 1)
+        )  # shape : (batch_size*n_steps, 1)
+        time_input_normalized = time_input * 3.14159  # scale for angle enc. [0, pi]
         # normalize with atan for better fidelity with angle enc.
-        # S_normalized = 2 * torch.atan(S_batch[:, :-1] / 100.0)
-        # v_normalized = 2 * torch.atan(v_batch[:, :-1] / 0.04)
-        inputs = torch.cat([S_input, v_input, time_input], dim=-1).float()  # shape : (batch_size*n_steps, 3)
-        #inputs = torch.stack([S_normalized, v_normalized], dim=-1).view(-1, 2).float()
+        S_normalized = 2 * torch.atan(S_batch[:, :-1] / 100.0).reshape(
+            -1, 1
+        )  # shape : (batch_size*n_steps, 1)
+        v_normalized = 2 * torch.atan(v_batch[:, :-1] / 0.04).reshape(
+            -1, 1
+        )  # shape : (batch_size*n_steps, 1)
+        # inputs = torch.cat([S_input, v_input, time_input], dim=-1).float()  # shape : (batch_size*n_steps, 3)
+        inputs = torch.cat(
+            [S_normalized, v_normalized, time_input_normalized], dim=-1
+        ).float()
         optimizer.zero_grad()
         deltas = model(inputs).view(batch_size, -1)  # re-shape to (batch, n_steps)
         wealth = calculate_terminal_wealth(S_batch, deltas)
@@ -223,16 +243,17 @@ def plot_training_results(loss_history, var_history):
     plt.grid(alpha=0.3)
     plt.show()
 
-def plot_wealth(model, S_master, v_master, batch_size=256, epoch_interval=50, n_epochs=500):
+
+def plot_wealth(
+    model, S_master, v_master, batch_size=4 * 1024, epoch_interval=50, n_epochs=500
+):
     """
     Plots the distribution of terminal wealth across paths, sampled every epoch_interval epochs.
     """
     model.eval()
     device = next(model.parameters()).device
     n_snapshots = n_epochs // epoch_interval
-    fig, axes = plt.subplots(
-        n_snapshots, 1, figsize=(12, 3 * n_snapshots), sharex=True
-    )
+    fig, axes = plt.subplots(n_snapshots, 1, figsize=(12, 3 * n_snapshots), sharex=True)
     if n_snapshots == 1:
         axes = [axes]
     with torch.no_grad():
@@ -250,10 +271,20 @@ def plot_wealth(model, S_master, v_master, batch_size=256, epoch_interval=50, n_
             wealth = calculate_terminal_wealth(S_batch, deltas).cpu().numpy()
             ax = axes[i]
             ax.hist(wealth, bins=40, color="steelblue", alpha=0.7, edgecolor="white")
-            ax.axvline(wealth.mean(), color="red", linestyle="--", linewidth=1.5, label=f"Mean: {wealth.mean():.2f}")
-            ax.axvline(0, color="black", linestyle=":", linewidth=1.0, label="Break-even")
+            ax.axvline(
+                wealth.mean(),
+                color="red",
+                linestyle="--",
+                linewidth=1.5,
+                label=f"Mean: {wealth.mean():.2f}",
+            )
+            ax.axvline(
+                0, color="black", linestyle=":", linewidth=1.0, label="Break-even"
+            )
             ax.set_ylabel("Count")
-            ax.set_title(f"Epoch {epoch} — mean: {wealth.mean():.2f}, std: {wealth.std():.2f}")
+            ax.set_title(
+                f"Epoch {epoch} — mean: {wealth.mean():.2f}, std: {wealth.std():.2f}"
+            )
             ax.legend(fontsize=8)
     axes[-1].set_xlabel("Terminal Wealth")
     fig.suptitle("Terminal Wealth Distribution per Epoch Snapshot", fontsize=14, y=1.01)
