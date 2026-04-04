@@ -126,32 +126,6 @@ class HybridClassicalQuantumHedger(nn.Module):
         return torch.sigmoid(self.post_processing(x))  # Normalized Hedge Ratio
 
 
-def calculate_terminal_wealth__(price_paths, hedge_ratios, transaction_cost=0.0001):
-    """
-    price_paths: (batch, n_steps) - The Asset Price (S) from Heston
-    hedge_ratios: (batch, n_steps) - The Delta (delta) from your Quantum Layer
-    transaction_cost: fixed cost per unit traded
-    """
-    # batch_size, n_steps = price_paths.shape
-    price_diffs = (
-        price_paths[:, 1:] - price_paths[:, :-1]
-    )  # dS = S_{t+1} - S_t, (batch, n_steps)
-    hedge_gains = hedge_ratios * price_diffs  # delta_t * dS_t
-    # Transaction Cost = cost_rate * |delta_t - delta_{t-1}| * Price_t
-    delta_diffs = torch.abs(hedge_ratios[:, 1:] - hedge_ratios[:, :-1])
-    costs = transaction_cost * delta_diffs * price_paths[:, 2:]
-    total_hedge_pnl = torch.sum(
-        hedge_gains - costs[:, :], dim=1
-    )  # sum p&l over entire path
-    # For a Call Option: max(S_T - K, 0)
-    strike_price = price_paths[
-        :, 0
-    ].mean()  # get strike from price paths with option as at the money
-    terminal_payoff = torch.clamp(price_paths[:, -1] - strike_price, min=0)
-    wealth = total_hedge_pnl - terminal_payoff  # Terminal Wealth = Payoff - Hedge P&L
-    return wealth
-
-
 def calculate_terminal_wealth(price_paths, hedge_ratios, transaction_cost=0.0001):
     # price_paths: (batch, n_steps+1), hedge_ratios: (batch, n_steps)
     price_diffs = price_paths[:, 1:] - price_paths[:, :-1]  # (batch, n_steps)
@@ -230,7 +204,7 @@ def plot_training_results(loss_history, var_history):
     plt.show()
 
 
-def full_trian_loop():
+def full_train_loop():
     q_model = HybridClassicalQuantumHedger(n_layers=3)
     trained_model, losses, vars_est = train_quantum_hedger(q_model, n_epochs=50)
     plot_training_results(losses, vars_est)
