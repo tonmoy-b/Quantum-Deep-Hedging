@@ -78,7 +78,7 @@ def quantum_orthogonal_hedging_circuit(inputs, network_weights):
 
 
 class ExpectedShortfallLoss(nn.Module):
-    def __init__(self, regularization: float = 0.01, alpha: float = 0.05):
+    def __init__(self, regularization: float = 1e-5, alpha: float = 0.05):
         super(ExpectedShortfallLoss, self).__init__()
         self.alpha: float = alpha
         self.regularization: float = regularization
@@ -90,9 +90,10 @@ class ExpectedShortfallLoss(nn.Module):
         """
         portfolio_returns = portfolio_returns.double()  # ensure higher precision
         losses = -portfolio_returns  # negated to affect penalization of loss
-        clamped_var = self.var_threshold.clamp(min=losses.min(), max=losses.max())
+        # clamped_var = self.var_threshold.clamp(min=losses.min(), max=losses.max())
         # tail loss -> max(0, loss - VaR)
-        tail_losses = torch.clamp(losses - clamped_var, min=0)
+        # tail_losses = torch.clamp(losses - clamped_var, min=0)
+        tail_losses = torch.clamp(losses - self.var_threshold, min=0)
         # Rockafellar-Uryasev formula
         # todo: check if self.var_threshold or clamped_var works better
         es_loss = self.var_threshold + (1.0 / self.alpha) * torch.mean(
@@ -104,6 +105,61 @@ class ExpectedShortfallLoss(nn.Module):
 
     def get_var(self):
         return self.var_threshold.item() if self.var_threshold is not None else None
+
+
+class HybridClassicalQuantumHedgerGRUPreFilter(nn.Module):
+    def __init__(
+        self,
+        quantum_layer: qml.qnn.TorchLayer = None,
+        n_quantum_layer: int = 5,
+        n_qubits: int = 4,
+    ):
+        super().__init__()
+        self.n_qubits = n_qubits
+        self.hidden_layer_size: int = 16
+        # GRU to act as a low-pass filter
+        self.gru_layer = nn.GRU(
+            input_size=3,
+            hidden_size=self.hidden_layer_size,
+            num_layers=1,
+            batch_first=True,
+        )
+        # dense layer to take from GRU and learn feature correlations
+        self.feature_map = nn.Linear(self.hidden_layer_size, n_qubits)
+        # data re-upload to allow greater representational strength into the quantum layer
+        self.quantum_layer = qml.qnn.TorchLayer(
+            self.quantum_circuit_reuploading,
+            {"weights": (n_quantum_layer, n_qubits, 3)},
+        )
+        # output
+        self.post_processing = nn.Linear(n_qubits, 1)
+
+    def forward(self, x):
+        # expected x shape - (batch_size, n_steps, 3)
+        # pass input through gru layer
+        gru_layer_output, _ = self.gru_layer(x)
+        batch_size, n_steps, _ = gru_layer_output.shape
+        # view fails without contiguous as memory is disjoint
+        x_flat = gru_layer_output.contiguous().view(-1, 16)
+        # map R->[-pi,pi] since tanh(R)->[-1,1] * pi -> [-pi,pi]
+        q_inputs = torch.pi * torch.tanh(self.feature_map(x_flat))
+        q_out = self.quantum_layer(q_inputs)
+        network_out = self.post_processing(q_out)
+        # curtail output to [0,1] for final delta
+        deltas = torch.sigmoid(network_out)
+        # shape change: (batch_size*n_steps, 1) ->(batch_size,n_steps)
+        return deltas.view(batch_size, n_steps)
+
+    @staticmethod
+    @qml.qnode(qml.device("default.qubit", wires=4), interface="torch")
+    def quantum_circuit_reuploading(inputs, weights):
+        n_layers, n_qubits, _ = weights.shape
+        for i in range(n_layers):
+            qml.AngleEmbedding(inputs, wires=range(n_qubits), rotation="Z")
+            qml.StronglyEntanglingLayers(
+                weights=weights[i : i + 1], wires=range(n_qubits)
+            )
+        return [qml.expval(qml.PauliZ(j)) for j in range(n_qubits)]
 
 
 class HybridClassicalQuantumHedger(nn.Module):
@@ -146,18 +202,29 @@ def calculate_terminal_wealth(price_paths, hedge_ratios, transaction_cost=0.0001
 
 
 def train_quantum_hedger(
-    model: nn.Module, n_epochs: int = 500, batch_size: int = 4 * 1024, lr: float = 0.01
+    model: nn.Module,
+    n_epochs: int = 80,
+    batch_size: int = 4 * 1024,
+    lr: float = 0.01,
+    with_GRU: bool = True,
+    var_warmup_epochs: int = 40,
 ):
     device = get_best_device()
     model = model.to(device)
     criterion = ExpectedShortfallLoss(alpha=0.05).to(device)
-    # optimizer = optim.Adam(
-    #     list(model.parameters()) + list(criterion.parameters()), lr=lr
-    # )
+    criterion.var_threshold.requires_grad_(False)
+    criterion.var_threshold.data.fill_(0.0)
+    if hasattr(model, "gru_layer"):
+        # GRU model
+        classical_front = list(model.gru_layer.parameters()) + list(
+            model.feature_map.parameters()
+        )
+    else:
+        classical_front = list(model.pre_processing.parameters())
     optimizer = optim.Adam(
         [
             {
-                "params": model.pre_processing.parameters(),
+                "params": classical_front,
                 "lr": 1e-3,
                 "weight_decay": 1e-4,
             },
@@ -167,13 +234,14 @@ def train_quantum_hedger(
                 "lr": 1e-3,
                 "weight_decay": 1e-4,
             },
-            {"params": criterion.parameters(), "lr": 2e-4},
+            {"params": criterion.parameters(), "lr": 1e-4},
         ]
     )
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, "min", patience=5)
     model.train()
     loss_history = []
     var_history = []
+    wealth_history = []
     # create fresh Heston price paths,
     # each epoch will sample from these
     # to control
@@ -182,6 +250,15 @@ def train_quantum_hedger(
         n_paths=master_market_paths_sample_size
     )  # S: (batch, n_steps+1), v: (batch, n_steps+1)
     for epoch in range(n_epochs):
+        # change from inital hard-coded value to learned value before first 50 epochs end
+        if epoch == var_warmup_epochs:
+            # Estimate VaR from recent wealth observations
+            all_wealth = torch.cat(wealth_history[-10:])  # last 10 batches
+            empirical_var = torch.quantile(-all_wealth, 1 - criterion.alpha)
+            criterion.var_threshold.data.fill_(empirical_var.item())
+            criterion.var_threshold.requires_grad_(True)
+            print(f"[Epoch {epoch}] Unfreezing VaR, init={empirical_var.item():.4f}")
+
         idx = torch.randint(0, master_market_paths_sample_size, (batch_size,))
         S_batch, v_batch = S_master[idx], v_master[idx]
         # S_input = S_batch[:, :-1].reshape(-1, 1) / 100.0  # Normalized Price
@@ -199,6 +276,11 @@ def train_quantum_hedger(
         v_normalized = 2 * torch.atan(v_batch[:, :-1] / 0.04).reshape(
             -1, 1
         )  # shape : (batch_size*n_steps, 1)
+        # change shape for GRU model
+        if with_GRU:
+            S_normalized = S_normalized.view(batch_size, n_steps, 1)
+            v_normalized = v_normalized.view(batch_size, n_steps, 1)
+            time_input_normalized = time_input_normalized.view(batch_size, n_steps, 1)
         # inputs = torch.cat([S_input, v_input, time_input], dim=-1).float()  # shape : (batch_size*n_steps, 3)
         inputs = torch.cat(
             [S_normalized, v_normalized, time_input_normalized], dim=-1
@@ -206,6 +288,7 @@ def train_quantum_hedger(
         optimizer.zero_grad()
         deltas = model(inputs).view(batch_size, -1)  # re-shape to (batch, n_steps)
         wealth = calculate_terminal_wealth(S_batch, deltas)
+        wealth_history.append(wealth.detach())  # save wealth
         loss = criterion(wealth)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -263,9 +346,11 @@ def plot_wealth(
             v_batch = v_master[idx].to(device)
             n_steps = S_batch.shape[1] - 1
             time_steps = torch.linspace(1.0, 0.0, n_steps, device=device)
-            time_input = time_steps.unsqueeze(0).expand(batch_size, -1).reshape(-1, 1)
-            S_input = S_batch[:, :-1].reshape(-1, 1) / 100.0
-            v_input = v_batch[:, :-1].reshape(-1, 1) / 0.04
+            time_input = (
+                time_steps.unsqueeze(0).expand(batch_size, -1).reshape(-1, 1)
+            ) * 3.14159
+            S_input = 2 * torch.atan(S_batch[:, :-1] / 100.0).unsqueeze(-1)
+            v_input = 2 * torch.atan(v_batch[:, :-1] / 0.04).unsqueeze(-1)
             inputs = torch.cat([S_input, v_input, time_input], dim=-1).float()
             deltas = model(inputs).view(batch_size, -1)
             wealth = calculate_terminal_wealth(S_batch, deltas).cpu().numpy()
@@ -292,8 +377,13 @@ def plot_wealth(
     plt.show()
 
 
-def full_train_loop():
-    q_model = HybridClassicalQuantumHedger(n_layers=3)
+def full_train_loop(with_GRU: bool = True):
+    q_model = (
+        HybridClassicalQuantumHedgerGRUPreFilter()
+        if with_GRU
+        else HybridClassicalQuantumHedger(n_layers=3)
+    )
+    # q_model = HybridClassicalQuantumHedger(n_layers=3)
     trained_model, losses, vars_est, S_master, v_master = train_quantum_hedger(q_model)
     plot_training_results(losses, vars_est)
     plot_wealth(trained_model, S_master, v_master)
