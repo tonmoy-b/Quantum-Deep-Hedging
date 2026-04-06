@@ -1,0 +1,5 @@
+Profile finance::governance::MarketDataProfile
+{
+    stereotypes: [Calibrated, Observed, Simulated];
+    tags: [source, asOfDate, calibrationMethod];
+}

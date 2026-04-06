@@ -3,6 +3,7 @@ jupyter
 fastapi
 matplotlib
 ipykernel
+confluent-kafka>=2.3.0
 
 # specialized indices for GPU and NVIDIA binaries
 --extra-index-url https://download.pytorch.org/whl/cu126
@@ -18,6 +19,8 @@ pennylane-lightning
 numpy>=2.1.0
 pandas>=2.2.0
 
+# data-provider
+yfinance==1.2.0
 
 # Testing
 pytest
@@ -32,7 +35,3 @@ pytest
 
 # JAX with CUDA
 # jax[cuda13]
-
-# finance data loaders
-#yfinance
-#pandas-datareader

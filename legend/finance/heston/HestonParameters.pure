@@ -1,0 +1,52 @@
+Class finance::heston::HestonParameters
+{
+    // --- Identity & Lineage ---
+    assetId   : String[1];
+    timestamp : DateTime[1];
+
+    // --- Market Observables ---
+    // Raw market data sourced from yfinance / Bloomberg feed
+    <<finance::governance::MarketDataProfile.Observed>>
+    {finance::governance::MarketDataProfile.source : 'yfinance'}
+    spotPrice : Float[1];                          // S_0
+
+    <<finance::governance::MarketDataProfile.Observed>>
+    {finance::governance::MarketDataProfile.source : 'yfinance/VIX'}
+    initV0 : Float[1];                             // v_0 = VIX^2
+
+    <<finance::governance::MarketDataProfile.Observed>>
+    {finance::governance::MarketDataProfile.source : 'FRED/yfinance'}
+    riskFreeRate : Float[1];                       // r (annualised)
+
+    dividendYield : Float[0..1];                   // q — optional
+
+    // --- Calibrated Heston Parameters ---
+    // Parameters derived/calibrated from market observables
+    <<finance::governance::MarketDataProfile.Calibrated>>
+    {finance::governance::MarketDataProfile.calibrationMethod : 'historical'}
+    kappa : Float[1];                              // mean reversion speed
+
+    <<finance::governance::MarketDataProfile.Calibrated>>
+    {finance::governance::MarketDataProfile.calibrationMethod : 'historical'}
+    theta : Float[1];                              // long-run variance
+
+    <<finance::governance::MarketDataProfile.Calibrated>>
+    sigma : Float[1];                              // vol-of-vol
+
+    <<finance::governance::MarketDataProfile.Calibrated>>
+    {finance::governance::MarketDataProfile.calibrationMethod : 'rolling_correlation'}
+    rho : Float[1];                                // spot-vol correlation
+
+    // --- Derived Properties (Feller Condition) ---
+    // Feller ratio: 2*kappa*theta / sigma^2
+    // Must be > 1.0 to ensure variance process V_t stays strictly positive
+    fellerRatio()
+    {
+        2.0 * $this.kappa * $this.theta / ($this.sigma * $this.sigma)
+    } : Float[1];
+
+    isFellerSatisfied()
+    {
+        $this.fellerRatio() > 1.0
+    } : Boolean[1];
+}

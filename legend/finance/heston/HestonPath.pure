@@ -1,0 +1,42 @@
+Class finance::heston::HestonPath
+{
+    // --- Simulation Identity ---
+    simulationId : String[1];
+    seed         : Integer[1];
+
+    // --- Discretisation Config ---
+    nSteps : Integer[1];
+    dt     : Float[1];                             // time step in years
+
+    // --- Simulated Time Series ---
+    <<finance::governance::MarketDataProfile.Simulated>>
+    spotPrices : Float[*];                         // S_t  — Heston GBM path
+
+    <<finance::governance::MarketDataProfile.Simulated>>
+    varianceProcess : Float[*];                    // V_t  — CIR variance path
+
+    timeGrid : Float[*];                           // t_0 .. T (in years)
+
+    // --- Parent Parameters ---
+    // Composition: each path is tied to exactly one calibrated parameter set
+    parameters : finance::heston::HestonParameters[1];
+
+    // --- Derived Properties ---
+    // Convenience: number of time steps actually stored
+    actualSteps()
+    {
+        $this.spotPrices->size()
+    } : Integer[1];
+
+    // Terminal spot price S_T
+    terminalSpot()
+    {
+        $this.spotPrices->last()
+    } : Float[1];
+
+    // Terminal variance V_T
+    terminalVariance()
+    {
+        $this.varianceProcess->last()
+    } : Float[1];
+}
