@@ -389,16 +389,19 @@ def full_train_loop(with_GRU: bool = True):
     plot_wealth(trained_model, S_master, v_master)
     return trained_model
 
-def save_model_for_production(model, criterion, path: str="../../saved_models/production_model.pt"):
+
+def save_model_for_production(
+    model, criterion, path: str = "../../saved_models/production_model.pt"
+):
     checkpoint = {
-        'model_state_dict': model.state_dict(),
-        'var_threshold': criterion.var_threshold.data,
-        'metadata': {
-            'alpha': criterion.alpha,
-            'n_qubits': model.n_qubits,
-            'model_type': 'HRQNN_v1',
-            'data_governance_id': 'meta::quantum::hedging::MarketPath_v1' # Legend ID
-        }
+        "model_state_dict": model.state_dict(),
+        "var_threshold": criterion.var_threshold.data,
+        "metadata": {
+            "alpha": criterion.alpha,
+            "n_qubits": model.n_qubits,
+            "model_type": "HRQNN_v1",
+            "data_governance_id": "meta::quantum::hedging::MarketPath_v1",  # Legend ID
+        },
     }
     torch.save(checkpoint, path)
     print(f"Production checkpoint saved to {path} with governance metadata.")
