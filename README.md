@@ -63,6 +63,14 @@ Key concepts include:
 - **Risk measures** like CVaR
 - **Quantum-classical hybrid training** using frameworks like PennyLane and Qiskit
 
+### Research & Theoretical Foundations: The Quantum Data Pipeline
+A critical challenge in implementing quantum algorithms for quantitative finance (such as the models explored in this repository) is the "Quantum I/O Bottleneck"—the massive computational overhead of loading classical financial data into a quantum state. 
+
+To provide context on the hardware and mathematical constraints guiding this project's architecture, I have authored a detailed technical breakdown of the required data pipelines:
+* [**Quantum Data Pipelines: Bucket-Bridge Architecture QRAM and Block-Encoding**](./research/block_encoding_qsvt_qram.md) 
+
+This article explores why naive $O(N^2)$ data loading destroys quantum advantage, and how QRAM and Quantum Singular Value Transformation (QSVT) provide the necessary framework for efficient data interchange between classical systems and quantum hardware.
+
 ---
 ##  Implementation Updates
 _My Deep Hedging framework has officially outperformed the Black-Scholes baseline under the Heston Model! By utilizing a custom Neural Network to navigate stochastic volatility and market frictions, the model achieved a superior risk profile for a European Call option._
@@ -89,6 +97,7 @@ Traditional hedging (Greeks) often fails in real-world scenarios due to:
 - Stochastic Volatility: Markets don't have the constant volatility $\sigma$ that is often assumed by analytical solutions
 - Transaction Costs: Frequent rebalancing erodes wealth without generating commisurate benefits, and analytical solutions tend not to seek to balance such effects to stop wasteful expenditures in the course of hedging
 - Discrete Time: We can't hedge "continuously" as theory suggests due to market-limits and frictions
+
 
 ### The Architecture
 ### Classical Agent (`src/architecture.py`)
